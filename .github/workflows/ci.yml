@@ -1,0 +1,73 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  testy:
+    name: Vet, testy i build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: "1.24"
+          cache: true
+
+      - name: Formatowanie
+        # gofmt nie ma trybu "sprawdź" z kodem wyjścia — lista plików musi być pusta.
+        run: |
+          niesformatowane=$(gofmt -l .)
+          if [ -n "$niesformatowane" ]; then
+            echo "Pliki wymagają gofmt:"; echo "$niesformatowane"; exit 1
+          fi
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: Testy z detektorem wyścigów
+        # -race wykrywa równoległy dostęp do stanu — konsument liczy statystyki
+        # z kilku goroutine'ów, więc to jest tu realna kontrola, nie ozdobnik.
+        run: go test -race -count=1 ./...
+
+      - name: Build obu binariów
+        run: |
+          go build ./cmd/consumer
+          go build ./cmd/producer
+
+  obraz:
+    name: Budowa obrazu
+    runs-on: ubuntu-latest
+    needs: [testy]
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Konsument
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          build-args: CEL=consumer
+          push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Producent
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          build-args: CEL=producer
+          push: false
+          cache-from: type=gha

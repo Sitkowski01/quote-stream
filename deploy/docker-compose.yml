@@ -1,0 +1,115 @@
+# Pelny potok: producent -> Kafka -> konsument -> price-alerts-api -> PostgreSQL
+#
+# Obraz `price-alerts-api:0.1.0` zbuduj w sasiednim repozytorium:
+#   docker build -t price-alerts-api:0.1.0 ../price-alerts-api
+name: quote-stream
+
+services:
+  kafka:
+    image: apache/kafka:3.9.0
+    environment:
+      # Tryb KRaft — bez ZooKeepera.
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      # Jeden broker, wiec replikacja jeden — na produkcji minimum trzy.
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 >/dev/null 2>&1"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  # Tematy zakladamy JAWNIE, zanim ruszy konsument. Automatyczne tworzenie
+  # dziala, ale z opoznieniem — pierwszy zapis do swiezo powolanego tematu
+  # potrafi wrocic z "Unknown Topic Or Partition", zanim wybierze sie lider.
+  tematy:
+    image: apache/kafka:3.9.0
+    depends_on:
+      kafka:
+        condition: service_healthy
+    restart: on-failure
+    entrypoint: ["/bin/sh"]
+    # Komenda jako LISTA z jednym elementem. Podana tekstem zostalaby rozbita
+    # na osobne argumenty, a wtedy `sh -c` wzialby tylko pierwszy z nich
+    # i kafka-topics.sh dostalby zero argumentow.
+    command:
+      - "-c"
+      - >
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092
+        --create --if-not-exists --topic quotes --partitions 3 --replication-factor 1 &&
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092
+        --create --if-not-exists --topic quotes.dlq --partitions 1 --replication-factor 1 &&
+        echo "tematy gotowe"
+
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: price_alerts
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d price_alerts"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  api:
+    image: price-alerts-api:0.1.0
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/price_alerts
+      API_KEY: ${API_KEY:-klucz-lokalny}
+      APP_ENV: local
+    ports:
+      - "${API_PORT:-8000}:8000"
+    command: >
+      sh -c "alembic upgrade head &&
+             uvicorn app.main:app --host 0.0.0.0 --port 8000"
+
+  consumer:
+    build:
+      context: ..
+      args:
+        CEL: consumer
+    depends_on:
+      kafka:
+        condition: service_healthy
+      tematy:
+        condition: service_completed_successfully
+    environment:
+      KAFKA_BROKERS: kafka:9092
+      KAFKA_TOPIC: quotes
+      KAFKA_DLQ_TOPIC: quotes.dlq
+      KAFKA_GROUP: quote-stream
+      ALERTS_API_URL: http://api:8000
+      ALERTS_API_KEY: ${API_KEY:-klucz-lokalny}
+      LOG_LEVEL: info
+    ports:
+      - "${CONSUMER_PORT:-8080}:8080"
+
+  producer:
+    build:
+      context: ..
+      args:
+        CEL: producer
+    depends_on:
+      kafka:
+        condition: service_healthy
+      tematy:
+        condition: service_completed_successfully
+    environment:
+      KAFKA_BROKERS: kafka:9092
+      KAFKA_TOPIC: quotes
+      TICK_MS: "1000"

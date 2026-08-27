@@ -1,0 +1,11 @@
+# Pliki binarne
+/bin/
+/out/
+*.exe
+
+# Narzędzia
+.idea/
+.vscode/
+
+# Środowisko
+.env
