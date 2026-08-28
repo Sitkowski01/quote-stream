@@ -47,7 +47,7 @@ Znalazłem to dopiero uruchamiając cały stos i wrzucając zepsutą wiadomość
 Testy jednostkowe tego nie widziały, bo sprawdzały decyzję procesora, a nie to,
 co konsument z tą decyzją robi.
 
-### Decyzje, o które warto zapytać
+### Decyzje projektowe
 
 - **Offsety zatwierdzane ręcznie**, dopiero po udanym przetworzeniu. Automatyczne
   potwierdzałoby wiadomości, których jeszcze nie wysłaliśmy do API — restart gubiłby dane.
