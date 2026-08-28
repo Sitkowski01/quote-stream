@@ -34,7 +34,7 @@ func main() {
 	defer dlq.Zamknij()
 
 	ustRetry := retry.Ustawienia{
-		Prob:    obs.EnvInt("RETRY_PROB", 4),
+		Prob:    obs.EnvInt("RETRY_ATTEMPTS", 4),
 		Baza:    200 * time.Millisecond,
 		Maks:    5 * time.Second,
 		Rozrzut: 0.3,

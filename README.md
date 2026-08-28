@@ -47,7 +47,7 @@ Znalazłem to dopiero uruchamiając cały stos i wrzucając zepsutą wiadomość
 Testy jednostkowe tego nie widziały, bo sprawdzały decyzję procesora, a nie to,
 co konsument z tą decyzją robi.
 
-### Pozostałe decyzje
+### Decyzje, o które warto zapytać
 
 - **Offsety zatwierdzane ręcznie**, dopiero po udanym przetworzeniu. Automatyczne
   potwierdzałoby wiadomości, których jeszcze nie wysłaliśmy do API — restart gubiłby dane.
@@ -103,7 +103,7 @@ curl localhost:8080/metrics
 | `KAFKA_GROUP` | `quote-stream` | grupa konsumencka |
 | `ALERTS_API_URL` | `http://localhost:8000` | adres price-alerts-api |
 | `ALERTS_API_KEY` | — | **wymagana**, inaczej każdy zapis wróci z 401 |
-| `RETRY_PROB` | `4` | liczba prób przy błędzie przejściowym |
+| `RETRY_ATTEMPTS` | `4` | liczba prób przy błędzie przejściowym (pierwsza + ponowienia) |
 | `TICK_MS` | `1000` | odstęp między notowaniami (producent) |
 
 ## Wynik uruchomienia
